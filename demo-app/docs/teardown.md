@@ -4,6 +4,21 @@
 
 ---
 
+## Where to Run These Commands
+
+Run **everything in this guide from the app dir**, unless a step is marked "from any directory":
+
+```bash
+cd ~/git-repos/demo-docker-app/demo-app
+```
+
+- `docker compose …` and any relative path (`.env`, `elk/…`) **require** the app dir.
+- `docker ps`, `docker images`, `docker rmi`, `docker network ls`, `docker cp`, and `curl https://localhost:9200/…` work **from any directory**.
+
+> Paths like `.env` and `elk/certs/http_ca.crt` below are relative to the app dir. (Do **not** prefix them with `demo-app/` once you have `cd`-ed in — that path won't exist.)
+
+---
+
 ## Before You Start — Know What This App Creates
 
 This project creates the following resources on your machine. This is what cleanup targets:
@@ -40,13 +55,13 @@ docker network ls | grep demo-app
 # Images used by this project
 docker images | grep -E "demo-app|logstash|filebeat"
 
-# Elasticsearch index created by this project
+# Elasticsearch index created by this project (from any directory)
 curl --cacert ~/ELK/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   "https://localhost:9200/_cat/indices/flask-app-*?v"
 
-# Local credential and cert files
-ls -la demo-app/.env demo-app/elk/certs/http_ca.crt 2>/dev/null
+# Local credential and cert files (from the app dir)
+ls -la .env elk/certs/http_ca.crt 2>/dev/null
 ```
 
 ---
@@ -56,7 +71,7 @@ ls -la demo-app/.env demo-app/elk/certs/http_ca.crt 2>/dev/null
 > **Use this when:** You want to free up CPU and memory but plan to run the app again later. All data and configuration is preserved.
 
 ```bash
-cd demo-app/
+cd ~/git-repos/demo-docker-app/demo-app
 docker compose stop
 ```
 
@@ -77,7 +92,7 @@ docker compose start
 > **Use this when:** You want a clean slate for the containers but want to keep the images (so next startup is fast — no re-download needed).
 
 ```bash
-cd demo-app/
+cd ~/git-repos/demo-docker-app/demo-app
 docker compose down
 ```
 
@@ -106,7 +121,7 @@ docker compose up -d
 
 First, make sure containers are stopped and removed (Level 2):
 ```bash
-cd demo-app/
+cd ~/git-repos/demo-docker-app/demo-app
 docker compose down
 ```
 
@@ -134,7 +149,7 @@ docker images | grep demo-app
 
 First ensure containers are stopped and removed (Level 2):
 ```bash
-cd demo-app/
+cd ~/git-repos/demo-docker-app/demo-app
 docker compose down
 ```
 
@@ -159,11 +174,13 @@ docker images | grep -E "logstash|filebeat"
 > **Use this when:** You are done with the project and want to remove sensitive files from your machine.
 
 ```bash
+# from the app dir
+
 # Remove the password file
-rm demo-app/.env
+rm .env
 
 # Remove the TLS certificate
-rm -rf demo-app/elk/certs/
+rm -rf elk/certs/
 ```
 
 **What happens:**
@@ -173,13 +190,15 @@ rm -rf demo-app/elk/certs/
 
 **To recreate them when needed:**
 ```bash
+# from the app dir
+
 # Re-copy the cert
-mkdir -p demo-app/elk/certs
+mkdir -p elk/certs
 docker cp es01:/usr/share/elasticsearch/config/certs/http_ca.crt \
-  demo-app/elk/certs/http_ca.crt
+  elk/certs/http_ca.crt
 
 # Re-create the .env
-echo "ELASTIC_PASSWORD=<your-elastic-password>" > demo-app/.env
+echo "ELASTIC_PASSWORD=<your-elastic-password>" > .env
 ```
 
 ---
@@ -252,11 +271,11 @@ docker rmi demo-app-app
 docker rmi docker.elastic.co/logstash/logstash:9.3.2
 docker rmi docker.elastic.co/beats/filebeat:9.3.2
 
-# Step 3: Remove local credential and cert files
-rm -f demo-app/.env
-rm -rf demo-app/elk/certs/
+# Step 3: Remove local credential and cert files (still in the app dir from Step 1)
+rm -f .env
+rm -rf elk/certs/
 
-# Step 4: Delete Elasticsearch log data
+# Step 4: Delete Elasticsearch log data (from any directory)
 curl --cacert ~/ELK/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   -X DELETE "https://localhost:9200/flask-app-*"
@@ -271,6 +290,7 @@ Then clean up Kibana manually (Level 7 above).
 Run this after cleanup to confirm nothing is left behind:
 
 ```bash
+# run from the app dir (the "Local files" check uses relative paths)
 echo "=== Containers ===" && \
   docker ps -a | grep demo-app || echo "None"
 
@@ -281,7 +301,7 @@ echo "=== Networks ===" && \
   docker network ls | grep demo-app || echo "None"
 
 echo "=== Local files ===" && \
-  ls demo-app/.env demo-app/elk/certs/http_ca.crt 2>/dev/null || echo "None"
+  ls .env elk/certs/http_ca.crt 2>/dev/null || echo "None"
 
 echo "=== Elasticsearch indices ===" && \
   curl -s --cacert ~/ELK/http_ca.crt \

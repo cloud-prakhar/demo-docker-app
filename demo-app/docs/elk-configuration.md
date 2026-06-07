@@ -4,6 +4,29 @@
 
 ---
 
+## Where to Run These Commands
+
+This project spans two directory levels:
+
+| Location | Path | What lives here |
+|---|---|---|
+| Repo root | `~/git-repos/demo-docker-app/` | `README.md`, both apps |
+| **App dir** ← run commands here | `~/git-repos/demo-docker-app/demo-app/` | `docker-compose.yml`, `.env`, `elk/` (filebeat, logstash, certs) |
+
+**Rule of thumb:**
+- Run every `docker compose …` command and every command with a **relative path** (`.env`, `elk/…`) from the **app dir**. Compose only finds `docker-compose.yml` and auto-loads `.env` from the directory you run it in.
+- Commands that target Docker globally or Elasticsearch directly — `docker ps`, `docker exec`, `docker cp`, and any `curl https://localhost:9200/…` — work from **any directory** (marked below where relevant).
+
+Unless a command is explicitly marked "from any directory", assume you have first run:
+
+```bash
+cd ~/git-repos/demo-docker-app/demo-app
+```
+
+> All `elk/…` and `.env` paths in this guide are written **relative to the app dir**, not the repo root.
+
+---
+
 ## How the Pipeline Works
 
 Before touching any config file, understand the complete journey a log takes:
@@ -68,15 +91,15 @@ This project handles credentials and TLS certificates. The following files are *
 | `demo-app/.env` | Contains the `elastic` user password in plain text |
 | `demo-app/elk/certs/http_ca.crt` | TLS Certificate Authority cert from your Elasticsearch instance. Every instance generates its own unique cert — committing it would expose your specific setup and is meaningless to anyone else |
 
-**How to verify these are not tracked:**
+**How to verify these are not tracked** (works from any directory inside the repo):
 ```bash
 git ls-files | grep -E "\.env|certs"
 ```
 
-This should return **nothing**. If it returns any result, those files are tracked and must be removed immediately:
+This should return **nothing**. If it returns any result, those files are tracked and must be removed immediately (from the app dir):
 ```bash
-git rm --cached demo-app/.env
-git rm --cached demo-app/elk/certs/http_ca.crt
+git rm --cached .env
+git rm --cached elk/certs/http_ca.crt
 git commit -m "remove sensitive files from tracking"
 ```
 
@@ -91,12 +114,14 @@ Every developer or machine running this project must perform these steps once lo
 Logstash needs to trust the HTTPS connection to Elasticsearch. The certificate lives inside the running `es01` container. Copy it into the project:
 
 ```bash
-# Create the certs folder
-mkdir -p demo-app/elk/certs
+# from the app dir: ~/git-repos/demo-docker-app/demo-app
 
-# Copy the cert out of the es01 container
+# Create the certs folder
+mkdir -p elk/certs
+
+# Copy the cert out of the es01 container (docker cp works from any directory)
 docker cp es01:/usr/share/elasticsearch/config/certs/http_ca.crt \
-  demo-app/elk/certs/http_ca.crt
+  elk/certs/http_ca.crt
 ```
 
 **What this cert is:**
@@ -107,10 +132,11 @@ Every Elasticsearch installation generates its own unique CA. The cert in your `
 
 ### Step 2 — Create the `.env` File
 
-Create `demo-app/.env` with your Elasticsearch password:
+Create `.env` (in the app dir, next to `docker-compose.yml`) with your Elasticsearch password:
 
 ```bash
-cat > demo-app/.env << 'EOF'
+# from the app dir: ~/git-repos/demo-docker-app/demo-app
+cat > .env << 'EOF'
 # Password for the elastic superuser in your running ELK stack
 # Logstash uses this to authenticate when sending logs to Elasticsearch
 # To get/reset this password:
@@ -217,6 +243,7 @@ logstash:
 filebeat:
   image: docker.elastic.co/beats/filebeat:9.3.2
   user: root
+  command: ["--strict.perms=false"]
   volumes:
     - ./elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
     - /var/lib/docker/containers:/var/lib/docker/containers:ro
@@ -230,6 +257,7 @@ filebeat:
 | Setting | Purpose |
 |---|---|
 | `user: root` | Filebeat needs root to read Docker's container log files and the Docker socket |
+| `command: ["--strict.perms=false"]` | **Disables Filebeat's config-ownership check.** By default Filebeat refuses to start unless `filebeat.yml` is owned by the user running it (root). The bind-mounted file is owned by your host user, not root, so without this flag Filebeat exits with `config file must be owned by the user identifier (uid=0) or root`. See the troubleshooting entry below |
 | `/var/lib/docker/containers:ro` | Mounts the host directory where Docker stores all container log files. Filebeat reads here |
 | `/var/run/docker.sock:ro` | Mounts the Docker socket — Filebeat uses this to discover running containers and read their metadata (name, image, labels) |
 | `depends_on: logstash` | Docker starts Logstash before Filebeat (so Filebeat does not try to connect before Logstash is ready) |
@@ -429,7 +457,7 @@ output {
 ## Starting the Stack
 
 ```bash
-cd demo-app/
+# from the app dir: ~/git-repos/demo-docker-app/demo-app
 
 # First time: pull images and build the app
 docker compose up -d --build
@@ -449,19 +477,27 @@ Logstash itself takes 30–60 seconds to fully initialise its pipeline. Filebeat
 ### Verify the pipeline is running
 
 ```bash
-# 1. All three containers are up
+# from the app dir (steps 1–3); step 4 works from any directory
+
+# 1. All three containers are up (look for "Up", not "Exited")
 docker compose ps
 
 # 2. Logstash pipeline started successfully
 docker compose logs logstash | grep "Pipelines running"
 
-# 3. Filebeat connected to Logstash
-docker compose logs filebeat | grep -i "connect"
+# 3. Filebeat started without a config/permission error
+#    NOTE: filebeat.yml sets logging.level: warning, so a healthy Filebeat is
+#    SILENT — `docker compose logs filebeat` is normally empty. That is good.
+#    Any output here usually means an error. The real proof Filebeat works is
+#    step 4 below (documents arriving in Elasticsearch).
+docker compose logs filebeat        # expect: no output when healthy
 
-# 4. Logs are reaching Elasticsearch
+# 4. Logs are reaching Elasticsearch (from any directory)
 curl --cacert ~/ELK/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   "https://localhost:9200/_cat/indices/flask-app-*?v"
+# A row for flask-app-YYYY.MM.dd with docs.count > 0 means the full pipeline works.
+# If you see only the header row, generate traffic first: curl http://localhost:5000/
 ```
 
 ---
@@ -496,7 +532,7 @@ curl --cacert ~/ELK/http_ca.crt \
   -d '{"password":"YourNewPassword"}'
 ```
 
-2. Update `demo-app/.env`:
+2. Update `.env` (in the app dir):
 ```
 ELASTIC_PASSWORD=YourNewPassword
 ```
@@ -522,13 +558,24 @@ docker compose logs logstash | grep "401"
 **Fix:**
 1. Verify the `.env` file has the correct password
 2. Verify the password has no special characters (`*`, `+`, `=`)
-3. Test the password manually:
+3. Test the password manually (from any directory):
 ```bash
 curl --cacert ~/ELK/http_ca.crt \
-  -u "elastic:<password-from-env>" \
+  -u "elastic:PASTE_REAL_PASSWORD_HERE" \
   https://localhost:9200
 ```
 If this returns JSON with `cluster_name`, the password is correct. If it returns a 401, reset the password (see section above).
+
+> **Gotcha:** `<your-elastic-password>` in these docs is a **placeholder**. Do not type the angle brackets — `-u "elastic:<m2W…>"` sends the literal `<…>` characters and fails with `security_exception`. To avoid quoting issues entirely, omit the password and let curl prompt for it:
+> ```bash
+> curl --cacert ~/ELK/http_ca.crt -u elastic https://localhost:9200
+> ```
+> or read it straight from `.env` (run from the app dir):
+> ```bash
+> curl --cacert ~/ELK/http_ca.crt \
+>   -u "elastic:$(grep ELASTIC_PASSWORD .env | cut -d= -f2)" \
+>   "https://localhost:9200/_cat/indices/flask-app-*?v"
+> ```
 
 4. Check Docker Compose is reading `.env` correctly — the container must see the variable:
 ```bash
@@ -543,8 +590,8 @@ docker exec demo-app-logstash-1 env | grep ELASTIC_PASSWORD
 
 **Fix:**
 ```bash
-# Verify .env exists and has the variable
-cat demo-app/.env | grep ELASTIC_PASSWORD
+# from the app dir — verify .env exists and has the variable
+grep ELASTIC_PASSWORD .env
 
 # Recreate logstash to force a fresh read of .env
 docker compose up -d --force-recreate logstash
@@ -582,11 +629,47 @@ Must include `co.elastic.logs/enabled: true`. If not, check the `labels:` sectio
 docker compose logs filebeat | grep -i "error\|docker"
 ```
 
-**Step 3 — Check Filebeat can connect to Logstash:**
+**Step 3 — Check Filebeat is actually running (not crash-looping):**
+```bash
+docker compose ps -a | grep filebeat
+```
+If it shows `Exited`, read the exit reason — Filebeat prints the error even at `warning` level:
 ```bash
 docker compose logs filebeat | tail -20
 ```
-Look for connection established or retrying messages.
+See the two entries below for the most common crash causes.
+
+---
+
+### Filebeat: `config file must be owned by the user identifier (uid=0) or root`
+
+**What it means:** Filebeat refuses to load `filebeat.yml` because the bind-mounted file is owned by your host user, not by root (the user inside the container). Filebeat exits immediately with status 1.
+
+**Fix:** the compose file disables this check via `command: ["--strict.perms=false"]` on the `filebeat` service. Confirm it is present, then recreate:
+```bash
+grep strict.perms docker-compose.yml   # should print: command: ["--strict.perms=false"]
+docker compose up -d --force-recreate filebeat
+```
+(Alternative: `sudo chown root:root elk/filebeat/filebeat.yml` — but this is brittle, as any `git checkout` or editor save resets the owner.)
+
+---
+
+### Filebeat: container starts but ships nothing / `flask-app-*` index never appears
+
+**What it means:** A common trap is an **empty or truncated `filebeat.yml`** (0 bytes). Filebeat may start but collect nothing, so Logstash never creates the index.
+
+**Diagnose:**
+```bash
+wc -c elk/filebeat/filebeat.yml      # 0 bytes = the config is empty/broken
+```
+
+**Fix — restore the committed config:**
+```bash
+# from the app dir
+git checkout HEAD -- elk/filebeat/filebeat.yml
+wc -c elk/filebeat/filebeat.yml      # should be ~739 bytes, not 0
+docker compose up -d --force-recreate filebeat
+```
 
 ---
 
@@ -625,12 +708,12 @@ SSL certificate problem: unable to get local issuer certificate
 
 **Fix:**
 ```bash
-# Re-copy the cert from the running es01 container
+# from the app dir — re-copy the cert from the running es01 container
 docker cp es01:/usr/share/elasticsearch/config/certs/http_ca.crt \
-  demo-app/elk/certs/http_ca.crt
+  elk/certs/http_ca.crt
 
 # Verify it has content
-cat demo-app/elk/certs/http_ca.crt | head -3
+head -3 elk/certs/http_ca.crt
 # Should start with: -----BEGIN CERTIFICATE-----
 
 # Restart Logstash

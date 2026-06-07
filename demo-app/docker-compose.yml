@@ -50,6 +50,9 @@ services:
   filebeat:
     image: docker.elastic.co/beats/filebeat:9.3.2
     user: root
+    # Bind-mounted config is owned by the host user, not root. Skip Filebeat's
+    # strict ownership check on the config file so it loads regardless of owner.
+    command: ["--strict.perms=false"]
     volumes:
       - ./elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       # Access to Docker container log files on the host

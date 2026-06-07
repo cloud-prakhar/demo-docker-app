@@ -4,6 +4,27 @@
 
 ---
 
+## Where to Run These Commands
+
+This project spans two directory levels:
+
+| Location | Path | What lives here |
+|---|---|---|
+| Repo root | `~/git-repos/demo-docker-app/` | `README.md`, both apps |
+| **App dir** ← run commands here | `~/git-repos/demo-docker-app/demo-app/` | `docker-compose.yml`, `.env`, `Dockerfile`, `elk/` |
+
+**Rule of thumb:**
+- Run every `docker compose …` command and every command with a **relative path** (`.env`, `elk/…`, `.`) from the **app dir**. Compose only finds `docker-compose.yml` and auto-loads `.env` from the directory you run it in.
+- Commands that target Docker globally or Elasticsearch directly — `docker ps`, `docker images`, `docker rmi`, `docker exec`, `docker cp`, and any `curl https://localhost:9200/…` — work from **any directory**.
+
+Unless a command is explicitly marked "from any directory", assume you have first run:
+
+```bash
+cd ~/git-repos/demo-docker-app/demo-app
+```
+
+---
+
 ## What This App Does
 
 This is a lightweight demo web application built with **Flask** (a Python web framework). It has two HTTP endpoints and is specifically designed to emit **structured JSON logs** to stdout — which makes it easy for log shippers like Filebeat to collect and parse them.
@@ -215,7 +236,7 @@ Docker builds images in layers. If `app.py` changes but `requirements.txt` does 
 ### With the full log pipeline (recommended)
 
 ```bash
-cd demo-app/
+# from the app dir: ~/git-repos/demo-docker-app/demo-app
 docker compose up -d --build
 ```
 
@@ -223,7 +244,7 @@ See [elk-configuration.md](./elk-configuration.md) for full setup including the 
 
 ### Standalone — app only (no log shipping)
 
-If you just want to run the Flask app without any ELK services:
+If you just want to run the Flask app without any ELK services (run from the app dir, where the `Dockerfile` lives):
 
 ```bash
 docker build -t flask-demo-app .
