@@ -2,18 +2,31 @@ filebeat.autodiscover:
   providers:
     - type: docker
       hints.enabled: true
+      # Without this, hints-based autodiscover falls back to a default config that
+      # collects EVERY container's logs, bypassing the opt-in template below.
+      hints.default_config:
+        enabled: false
       # Only collect logs from containers that have the label co.elastic.logs/enabled=true
       templates:
         - condition:
             equals:
               docker.container.labels.co.elastic.logs/enabled: "true"
           config:
-            - type: container
+            # The `container` input was removed in 9.x; filestream with the
+            # container parser is the supported replacement.
+            - type: filestream
+              id: container-${data.docker.container.id}
               paths:
                 - /var/lib/docker/containers/${data.docker.container.id}/*.log
-              json.keys_under_root: true
-              json.overwrite_keys: true
-              json.message_key: log
+              parsers:
+                - container:
+                    stream: all
+                    format: docker
+              # No ndjson parser here on purpose: the app's JSON must reach
+              # Logstash intact inside `message`, because logstash.conf parses it
+              # and renames the fields (level, endpoint, http_method, client_ip...).
+              # Decoding it here would leave `message` as plain text and the
+              # Logstash `if [message] =~ /^\s*\{/` filter would never match.
 
 processors:
   - add_docker_metadata:

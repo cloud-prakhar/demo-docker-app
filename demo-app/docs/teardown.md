@@ -55,8 +55,8 @@ docker network ls | grep demo-app
 # Images used by this project
 docker images | grep -E "demo-app|logstash|filebeat"
 
-# Elasticsearch index created by this project (from any directory)
-curl --cacert ~/ELK/http_ca.crt \
+# Elasticsearch index created by this project (from the app dir — uses the local cert)
+curl --cacert elk/certs/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   "https://localhost:9200/_cat/indices/flask-app-*?v"
 
@@ -209,7 +209,7 @@ echo "ELASTIC_PASSWORD=<your-elastic-password>" > .env
 
 ```bash
 # Delete all flask-app indices (all dates)
-curl --cacert ~/ELK/http_ca.crt \
+curl --cacert elk/certs/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   -X DELETE "https://localhost:9200/flask-app-*"
 ```
@@ -221,14 +221,14 @@ curl --cacert ~/ELK/http_ca.crt \
 
 **Delete a specific date's index only:**
 ```bash
-curl --cacert ~/ELK/http_ca.crt \
+curl --cacert elk/certs/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   -X DELETE "https://localhost:9200/flask-app-2026.03.27"
 ```
 
 **Verify the indices are gone:**
 ```bash
-curl --cacert ~/ELK/http_ca.crt \
+curl --cacert elk/certs/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   "https://localhost:9200/_cat/indices/flask-app-*?v"
 # Should return only the header row with no data rows
@@ -276,7 +276,7 @@ rm -f .env
 rm -rf elk/certs/
 
 # Step 4: Delete Elasticsearch log data (from any directory)
-curl --cacert ~/ELK/http_ca.crt \
+curl --cacert elk/certs/http_ca.crt \
   -u "elastic:<your-elastic-password>" \
   -X DELETE "https://localhost:9200/flask-app-*"
 ```
@@ -304,7 +304,7 @@ echo "=== Local files ===" && \
   ls .env elk/certs/http_ca.crt 2>/dev/null || echo "None"
 
 echo "=== Elasticsearch indices ===" && \
-  curl -s --cacert ~/ELK/http_ca.crt \
+  curl -s --cacert elk/certs/http_ca.crt \
     -u "elastic:<your-elastic-password>" \
     "https://localhost:9200/_cat/indices/flask-app-*?v" | grep flask || echo "None"
 ```

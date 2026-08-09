@@ -15,7 +15,8 @@ This project spans two directory levels:
 
 **Rule of thumb:**
 - Run every `docker compose …` command and every command with a **relative path** (`.env`, `elk/…`, `.`) from the **app dir**. Compose only finds `docker-compose.yml` and auto-loads `.env` from the directory you run it in.
-- Commands that target Docker globally or Elasticsearch directly — `docker ps`, `docker images`, `docker rmi`, `docker exec`, `docker cp`, and any `curl https://localhost:9200/…` — work from **any directory**.
+- Commands that target Docker globally — `docker ps`, `docker images`, `docker rmi`, `docker exec`, `docker cp` — work from **any directory**.
+- `curl https://localhost:9200/…` commands pass `--cacert elk/certs/http_ca.crt`, a relative path — run those from the **app dir** as well.
 
 Unless a command is explicitly marked "from any directory", assume you have first run:
 
@@ -410,3 +411,4 @@ docker compose up -d app
 ---
 
 *For ELK integration configuration, see [elk-configuration.md](./elk-configuration.md)*
+*For viewing these logs in Kibana, see [kibana-setup.md](./kibana-setup.md)*
